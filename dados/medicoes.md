@@ -116,6 +116,45 @@ com a tampa aberta.
 
 ---
 
+## 7. Boost de thread única — o caso que a carga total esconde
+
+Carga total e thread única dão respostas **opostas**, e medir só uma leva a conclusão
+errada. Em all-core, ~30 W se espalham por 8 núcleos; em thread única, ~20 W se
+concentram num núcleo só, e o ponto quente do die dispara muito mais rápido do que
+qualquer ventoinha responde.
+
+Laço contínuo de 1 thread, sem limite de frequência (4,55 GHz), tampa fechada:
+
+| | Limiares 68/58 | Limiares 60/52 |
+|---|---|---|
+| Temperatura inicial | 56,2 °C | **44,2 °C** |
+| Serviço chaveia para MÁXIMO | t+4 s, já a 84,5 °C | **t+14 s, a 77,0 °C** |
+| Tempo até ~90 °C | **22 s** | **58 s** |
+
+Baixar os limiares deu baseline 12 °C menor e **2,6× mais tempo** até o mesmo ponto —
+por isso `60000`/`52000` viraram o padrão do projeto.
+
+Mesmo assim chega a ~90 °C com thread única **sustentada**, e o `scaling_cur_freq` fica
+em ~4500 MHz o tempo todo: **a CPU não recua**. Isso é o teto físico da máquina, não uma
+deficiência da correção — a ventoinha já está em MÁXIMO durante todo o trecho quente, e
+o máximo do EC é o mesmo que este projeto comanda.
+
+Contexto para não interpretar mal: Tjmax do 7730U é ~105 °C e ele se autolimita bem
+antes. O desligamento térmico original acontecia acima de 100 °C **com a ventoinha
+parada** — regime completamente diferente.
+
+### Comparação entre os dois regimes
+
+| Carga | Pico | Comportamento |
+|---|---|---|
+| 16 threads, sem limite | **74,5 °C** | sobe, estabiliza e **desce** |
+| 1 thread, sem limite | **90,5 °C** | sobe devagar e continua subindo |
+
+Cargas reais de desenvolvimento (containers, builds paralelos, navegadores) são
+multi-thread e caem no primeiro caso.
+
+---
+
 ## Nota sobre a tampa aberta
 
 As medições das seções 1 a 5 foram feitas com a **tampa inferior removida**. Sem a tampa

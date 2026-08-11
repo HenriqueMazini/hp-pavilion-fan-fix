@@ -18,8 +18,8 @@
 # ============================================================================
 set -u
 
-SOBE=${SOBE:-68000}       # >= este valor (milicelsius) -> MAXIMO
-DESCE=${DESCE:-58000}     # <= este valor               -> AUTOMATICO
+SOBE=${SOBE:-60000}       # >= este valor (milicelsius) -> MAXIMO
+DESCE=${DESCE:-52000}     # <= este valor               -> AUTOMATICO
 INTERVALO=${INTERVALO:-3} # segundos entre leituras
 
 # Os indices hwmonN nao sao estaveis entre boots: resolver pelo campo 'name'.

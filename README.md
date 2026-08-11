@@ -148,6 +148,20 @@ principal: se a dissipação fosse o limite, o modo máximo não faria diferenç
 Repouso caiu de 44–46 °C para **39,9 °C**. A carga que antes disparava o corte térmico
 em 42 segundos agora é vencida pela refrigeração.
 
+### Um alerta: carga total e thread única dão respostas opostas
+
+| Carga (sem limite de frequência) | Pico | Comportamento |
+|---|---|---|
+| 16 threads | **74,5 °C** | sobe, estabiliza e **desce** |
+| 1 thread | **90,5 °C** | sobe devagar e segue subindo |
+
+É densidade de potência: em all-core ~30 W se espalham por 8 núcleos; em thread única
+~20 W se concentram num só, e o ponto quente do die dispara mais rápido do que qualquer
+ventoinha responde. **Medir só carga total leva a conclusão errada sobre limitar
+frequência.** Os ~90 °C são o teto físico da máquina — a ventoinha já está em MÁXIMO
+durante todo o trecho quente — e ficam bem abaixo do Tjmax de ~105 °C, onde a própria
+CPU se limita.
+
 Medições completas em [`dados/medicoes.md`](dados/medicoes.md).
 
 ## A correção
@@ -160,9 +174,13 @@ A solução é alternar entre os dois modos por temperatura, com histerese —
 **implementando em espaço de usuário a curva que o EC deixou de fazer**, usando
 exclusivamente a interface suportada:
 
-- **≥ 68 °C** → `pwm1_enable=0` (MÁXIMO)
-- **≤ 58 °C** → `pwm1_enable=2` (AUTOMÁTICO)
+- **≥ 60 °C** → `pwm1_enable=0` (MÁXIMO)
+- **≤ 52 °C** → `pwm1_enable=2` (AUTOMÁTICO)
 - entre os dois → mantém o estado atual
+
+Os limiares padrão foram escolhidos por medição, não por chute: comparados a 68/58, eles
+deram baseline 12 °C menor e **2,6× mais tempo** até a temperatura crítica numa rajada de
+thread única — sem provocar alternância (2 chaveamentos em 10 minutos de uso real).
 
 Só escreve quando o estado **muda**, então em uso normal são pouquíssimas chamadas WMI.
 Ao parar (`stop`, `restart`, reboot) deixa em máximo, que é a direção termicamente segura.

@@ -14,8 +14,8 @@ RestartSec=5
 # Mais silencio  -> aumente SOBE (ex.: 75000)
 # Mais folga     -> diminua SOBE (ex.: 62000)
 # Mantenha ao menos 8-10 C entre SOBE e DESCE para evitar alternancia.
-Environment=SOBE=68000
-Environment=DESCE=58000
+Environment=SOBE=60000
+Environment=DESCE=52000
 Environment=INTERVALO=3
 
 [Install]
