@@ -255,21 +255,37 @@ duração. A carga é um laço de inteiros puro, deliberadamente mais branda que
 ## Causa raiz ainda em aberto
 
 O serviço compensa o sintoma por um caminho legítimo, mas **o defeito continua lá**: o
-tacômetro não reporta RPM. Candidatos, do mais provável ao menos:
+tacômetro não reporta RPM.
 
-1. **Conector ou cabo da ventoinha** — pino do tacômetro sem contato, conector não
-   assentado até o fim, fio pinçado ou rompido. É o mais provável, especialmente se o
-   notebook foi aberto recentemente. Reencaixe com firmeza e verifique:
-   ```bash
-   cat /sys/class/hwmon/hwmon*/fan1_input   # com a ventoinha comprovadamente girando
-   ```
-   Qualquer valor diferente de zero significa que o tacômetro voltou — e é provável que
-   o EC recupere sozinho a curva correta, tornando este serviço dispensável.
-2. **Firmware do EC** — vale tentar o **HP BIOS Recovery via `Win+B`**, que reflasheia
-   BIOS *e* firmware do EC sem precisar de pendrive, download ou Windows: desligado e na
-   tomada, segure `Win`+`B`, pressione Power 2–3 s, solte o Power mantendo `Win`+`B` por
-   mais ~10 s.
-3. **Sensor Hall da própria ventoinha** — nesse caso a peça precisa ser trocada.
+**Já descartado:** conector mal encaixado. O conector foi reassentado com firmeza e
+`fan1_input`/`fan2_input` continuaram em `0` com a ventoinha comprovadamente girando.
+
+Candidatos restantes, todos abaixo do conector:
+
+1. **O cabo da ventoinha** — rompimento interno no fio do tacômetro, muitas vezes sem
+   sinal externo visível.
+2. **O sensor Hall dentro da ventoinha.**
+3. **O pino de entrada do tacômetro no EC** — nível de placa-mãe, o cenário caro.
+
+Os candidatos 1 e 2 se resolvem juntos, porque **o conjunto ventoinha + cabo é uma peça
+única** neste chassi. É uma peça de reposição barata e vale trocar antes de suspeitar da
+placa-mãe.
+
+Como verificar depois de qualquer intervenção — com a ventoinha comprovadamente girando:
+
+```bash
+for h in /sys/class/hwmon/hwmon*; do
+  [ "$(cat "$h/name")" = hp ] && cat "$h/fan1_input" "$h/fan2_input"
+done
+```
+
+Qualquer valor diferente de zero significa que o tacômetro voltou. Nesse caso é provável
+que o EC recupere sozinho a curva correta e este serviço se torne dispensável.
+
+**Também vale tentar, e é gratuito:** o **HP BIOS Recovery via `Win+B`** reflasheia BIOS
+*e* firmware do EC sem pendrive, download ou Windows — desligado e na tomada, segure
+`Win`+`B`, pressione Power 2–3 s, solte o Power mantendo `Win`+`B` por mais ~10 s. Não
+conserta um tacômetro fisicamente rompido, mas descarta a hipótese de firmware.
 
 ## BIOS
 
