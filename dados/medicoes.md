@@ -69,9 +69,12 @@ Amostra do estágio de 16 threads @ 2,5 GHz:
 O `acpitz` é um sensor de placa: atrasa e se move em degraus grosseiros. O `amdgpu`
 fica ~9 °C abaixo do Tctl sob carga de CPU.
 
-**Consequência prática:** a extensão GNOME **Vitals mostra a média de todos os sensores
-por padrão**. No pico em que o Tctl marcava 70,6 °C, o Vitals exibia **58 °C** — uma
-subestimação de ~12 °C. Configure para exibir o máximo, ou fixe o `k10temp`.
+**Consequência prática:** no menu suspenso da extensão GNOME **Vitals**, as linhas
+`Average`, `Minimum` e `Maximum` são calculadas **sobre todos os sensores de temperatura
+juntos** — CPU, GPU, placa e NVMe. No pico em que o Tctl marcava 70,6 °C, a linha
+`Average` exibia **58 °C**: subestimação de ~12 °C, causada pelo NVMe a ~40 °C puxando a
+média para baixo. Acrescente `__temperature_max__` à chave `hot-sensors` para ter o
+máximo no painel.
 
 ---
 

@@ -256,10 +256,17 @@ duração. A carga é um laço de inteiros puro, deliberadamente mais branda que
 
 - **Os índices `hwmonN` não são estáveis entre boots.** Hoje o `hp` pode ser `hwmon6` e
   amanhã outro. Sempre resolva pelo campo `name`. Todo script aqui faz isso.
-- **A extensão GNOME Vitals mostra a média de todos os sensores por padrão.** Num pico
-  em que o `Tctl` marcava 70,6 °C, o Vitals exibia **58 °C**. Configure para exibir o
-  máximo, ou fixe o `k10temp`. Monitorar pela média é como dirigir olhando a média do
-  velocímetro com o conta-giros.
+- **Cuidado com a linha `Average` da extensão GNOME Vitals.** No menu suspenso, o Vitals
+  calcula `Average`, `Minimum` e `Maximum` **sobre todos os sensores de temperatura
+  juntos** — CPU, GPU, placa e NVMe. Num pico em que o `Tctl` marcava 70,6 °C, a linha
+  `Average` exibia **58 °C**, porque o NVMe a ~40 °C puxa a média para baixo. Ler a
+  média é como dirigir olhando a média entre o velocímetro e o conta-giros. Ponha o
+  máximo no painel:
+  ```bash
+  SD=~/.local/share/gnome-shell/extensions/Vitals@CoreCoding.com/schemas
+  gsettings --schemadir "$SD" get org.gnome.shell.extensions.vitals hot-sensors
+  # acrescente '__temperature_max__' à lista retornada e grave de volta com `set`
+  ```
 - **O firmware HP reverte o modo do fan após 120 s.** Qualquer teste de modo automático
   com menos de ~3 minutos é inconclusivo. O driver renova a cada 90 s, mas só em modo
   máximo.
