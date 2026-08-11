@@ -1,0 +1,67 @@
+#!/bin/bash
+# ============================================================================
+# hp-fan-curve
+#
+# Curva de ventoinha em espaco de usuario para notebooks HP cujo Embedded
+# Controller subutiliza a ventoinha (tipicamente quando o tacometro nao
+# reporta RPM e o EC perde a realimentacao da malha de controle).
+#
+# Usa APENAS a interface suportada do driver hp-wmi:
+#   pwm1_enable = 0  -> MAXIMO      (comando WMI 0x27 da propria HP)
+#   pwm1_enable = 2  -> AUTOMATICO  (devolve o controle ao EC)
+#
+# O modo 1 (MANUAL) existe no driver mas e exclusivo dos Victus 16-r/16-s;
+# em outros modelos retorna EOPNOTSUPP. Por isso a curva e binaria, com
+# histerese para nao ficar alternando.
+#
+# https://github.com/HenriqueMazini/hp-pavilion-fan-fix
+# ============================================================================
+set -u
+
+SOBE=${SOBE:-68000}       # >= este valor (milicelsius) -> MAXIMO
+DESCE=${DESCE:-58000}     # <= este valor               -> AUTOMATICO
+INTERVALO=${INTERVALO:-3} # segundos entre leituras
+
+# Os indices hwmonN nao sao estaveis entre boots: resolver pelo campo 'name'.
+acha_hwmon() {
+  local alvo=$1 h
+  for h in /sys/class/hwmon/hwmon*; do
+    [ "$(cat "$h/name" 2>/dev/null)" = "$alvo" ] && { echo "$h"; return 0; }
+  done
+  return 1
+}
+
+# Espera ate 2 minutos pelo hp_wmi durante o arranque do sistema.
+HP=""; CPU=""
+for _ in $(seq 1 60); do
+  HP=$(acha_hwmon hp) && CPU=$(acha_hwmon k10temp) && [ -w "$HP/pwm1_enable" ] && break
+  sleep 2
+done
+if [ -z "$HP" ] || [ -z "$CPU" ] || [ ! -w "$HP/pwm1_enable" ]; then
+  echo "ERRO: hwmon 'hp' (hp-wmi) ou 'k10temp' indisponivel, ou sem permissao de escrita." >&2
+  exit 1
+fi
+
+echo "hp=$HP  k10temp=$CPU  sobe=$((SOBE/1000))C  desce=$((DESCE/1000))C  intervalo=${INTERVALO}s"
+
+ESTADO=""
+aplica() {
+  [ "$1" = "$ESTADO" ] && return 0
+  if echo "$2" > "$HP/pwm1_enable" 2>/dev/null; then
+    ESTADO=$1
+    echo "fan -> $1 (pwm1_enable=$2) a $(awk '{printf "%.1f", $1/1000}' "$CPU/temp1_input")C"
+  else
+    echo "AVISO: falha ao escrever pwm1_enable=$2 (BIOS rejeitou?)" >&2
+  fi
+}
+
+# Ao sair (stop/restart/reboot) deixa em MAXIMO: direcao termicamente segura.
+trap 'echo 0 > "$HP/pwm1_enable" 2>/dev/null; echo "saindo: fan em MAXIMO"; exit 0' TERM INT
+
+while :; do
+  T=$(cat "$CPU/temp1_input" 2>/dev/null || echo 0)
+  if   [ "$T" -ge "$SOBE"  ]; then aplica MAXIMO 0
+  elif [ "$T" -le "$DESCE" ]; then aplica AUTO   2
+  fi
+  sleep "$INTERVALO"
+done

@@ -1,0 +1,22 @@
+[Unit]
+Description=Curva de ventoinha para HP Pavilion (EC subutiliza o fan)
+Documentation=https://github.com/HenriqueMazini/hp-pavilion-fan-fix
+After=multi-user.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/hp-fan-curve
+Restart=always
+RestartSec=5
+
+# Limiares (milicelsius). Ajuste aqui e rode:
+#   sudo systemctl daemon-reload && sudo systemctl restart hp-fan-curve
+# Mais silencio  -> aumente SOBE (ex.: 75000)
+# Mais folga     -> diminua SOBE (ex.: 62000)
+# Mantenha ao menos 8-10 C entre SOBE e DESCE para evitar alternancia.
+Environment=SOBE=68000
+Environment=DESCE=58000
+Environment=INTERVALO=3
+
+[Install]
+WantedBy=multi-user.target
