@@ -137,6 +137,17 @@ mudando apenas o modo do fan.
 Isso também **descarta** aletas entupidas e pasta térmica ressecada como gargalo
 principal: se a dissipação fosse o limite, o modo máximo não faria diferença.
 
+### Validação com o serviço instalado, máquina fechada
+
+| Carga (16 threads) | Antes: tampa aberta, sem serviço | Depois: tampa fechada, com serviço |
+|---|---|---|
+| @ 2,5 GHz | 77,2 °C aos 120 s, ainda subindo | **73,4 °C** estabilizado |
+| @ 3,5 GHz | **88,1 °C aos 42 s → aborto** | pico 85,4 °C, **desceu** para 78,9 °C |
+| sem limite | não testado | pico 78,2 °C, **desceu** para 74,5 °C |
+
+Repouso caiu de 44–46 °C para **39,9 °C**. A carga que antes disparava o corte térmico
+em 42 segundos agora é vencida pela refrigeração.
+
 Medições completas em [`dados/medicoes.md`](dados/medicoes.md).
 
 ## A correção

@@ -75,9 +75,49 @@ subestimação de ~12 °C. Configure para exibir o máximo, ou fixe o `k10temp`.
 
 ---
 
-## Ressalva importante
+## 6. Validação final — tampa fechada, com o `hp-fan-curve` no comando
 
-Todas as medições foram feitas com a **tampa inferior removida**. Essa não é a condição
-real de uso: sem a tampa a admissão de ar fica desobstruída e a placa dissipa por
-convecção direta, o que costuma favorecer levemente a CPU. Os números com a máquina
-fechada e parafusada tendem a ser um pouco piores e ainda precisam ser levantados.
+Máquina fechada e parafusada, após reboot, com o serviço instalado decidindo sozinho
+(sem forçar modo em momento algum). Limiares: sobe em 68 °C, desce em 58 °C.
+
+| Carga | Tampa aberta, sem serviço | Tampa fechada, com serviço |
+|---|---|---|
+| 16 threads @ 2,5 GHz | 77,2 °C aos 120 s, **ainda subindo** | **73,4 °C** aos 240 s, estabilizado |
+| 16 threads @ 3,5 GHz | **88,1 °C aos 42 s → aborto** | pico 85,4 °C, **desceu** para 78,9 °C |
+| 16 threads sem limite | nunca testado | pico 78,2 °C aos 60 s, **desceu** para 74,5 °C |
+
+O caso de 3,5 GHz é o mais eloquente: a mesma carga que antes disparava o aborto em
+42 segundos agora sobe, a refrigeração **alcança e vence**, e a temperatura volta a cair.
+
+O serviço chaveou nos três estágios, sempre logo após cruzar o limiar:
+
+```
+Estágio 1  t+99s  a 68,4 °C  ->  MÁXIMO
+Estágio 2  t+6s   a 69,8 °C  ->  MÁXIMO
+Estágio 3  t+9s   a 69,1 °C  ->  MÁXIMO
+```
+
+### Duas observações contraintuitivas
+
+**Remover o teto de frequência esfriou a máquina.** Sem limite (pico 78,2 °C) ficou mais
+frio do que com teto de 3,5 GHz (pico 85,4 °C). Com `scaling_max_freq` no máximo do
+hardware, o `amd-pstate-epp` usa as próprias heurísticas de boost e potência e acabou
+rodando all-core mais baixo (2582–2969 MHz) do que quando fixado em 3,5 GHz
+(3069–3169 MHz). Fixar um teto intermediário atrapalhou o governor.
+
+**O teto de frequência quase não importa em carga total.** Em all-core o 7730U fica
+limitado por potência a ~2,6–3,0 GHz independentemente do valor de `scaling_max_freq`.
+O teto só afeta picos de 1–2 threads, ou seja, a responsividade interativa.
+
+### Temperatura de repouso
+
+Com a tampa fechada e a ventoinha operante: **39,9 °C** — abaixo dos 44–46 °C medidos
+com a tampa aberta.
+
+---
+
+## Nota sobre a tampa aberta
+
+As medições das seções 1 a 5 foram feitas com a **tampa inferior removida**. Sem a tampa
+a admissão de ar fica desobstruída e a placa dissipa por convecção direta. As medições da
+seção 6, com a máquina fechada, são as que valem para uso real — e saíram melhores.
