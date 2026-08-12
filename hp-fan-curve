@@ -44,11 +44,14 @@ fi
 
 echo "hp=$HP  k10temp=$CPU  sobe=$((SOBE/1000))C  desce=$((DESCE/1000))C  intervalo=${INTERVALO}s"
 
-ESTADO=""
+# Compara com o valor REAL do sysfs, nao com um estado guardado em memoria.
+# Se algo externo escrever em pwm1_enable (um teste manual, outra ferramenta),
+# o daemon percebe e corrige na proxima leitura, em vez de ficar dessincronizado.
 aplica() {
-  [ "$1" = "$ESTADO" ] && return 0
+  local atual
+  atual=$(cat "$HP/pwm1_enable" 2>/dev/null)
+  [ "$atual" = "$2" ] && return 0
   if echo "$2" > "$HP/pwm1_enable" 2>/dev/null; then
-    ESTADO=$1
     echo "fan -> $1 (pwm1_enable=$2) a $(awk '{printf "%.1f", $1/1000}' "$CPU/temp1_input")C"
   else
     echo "AVISO: falha ao escrever pwm1_enable=$2 (BIOS rejeitou?)" >&2
