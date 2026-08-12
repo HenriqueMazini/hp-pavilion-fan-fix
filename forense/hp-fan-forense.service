@@ -1,0 +1,19 @@
+[Unit]
+Description=Caixa-preta térmica e de energia (para diagnosticar desligamentos abruptos)
+Documentation=https://github.com/HenriqueMazini/hp-pavilion-fan-fix
+After=multi-user.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/sbin/hp-fan-forense
+Restart=always
+RestartSec=5
+Nice=10
+IOSchedulingClass=idle
+
+Environment=LOG=/var/log/hp-fan-forense.csv
+Environment=INTERVALO=5
+Environment=MAXBYTES=20971520
+
+[Install]
+WantedBy=multi-user.target
