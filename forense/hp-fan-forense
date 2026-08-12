@@ -14,6 +14,11 @@
 # Log: /var/log/hp-fan-forense.csv   (rotaciona em 20 MB, guarda 1 anterior)
 # ============================================================================
 set -u
+
+# Obrigatorio: em locales como pt_BR o awk imprime virgula decimal ("50,0"),
+# o que parte cada temperatura em dois campos e destroi o CSV.
+export LC_ALL=C
+
 LOG=${LOG:-/var/log/hp-fan-forense.csv}
 INTERVALO=${INTERVALO:-5}
 MAXBYTES=${MAXBYTES:-20971520}
