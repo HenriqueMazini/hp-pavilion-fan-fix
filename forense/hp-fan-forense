@@ -11,12 +11,14 @@
 # desligamento, foi perda de alimentacao externa; se ficar em 1 ate o fim,
 # foi o EC ou o hardware que cortou.
 #
+# CUSTO: usa apenas builtins do bash (read, printf, aritmetica) para nao
+# forkar processos a cada leitura. A versao ingenua, com cat/awk/date por
+# campo, consumia ~1150s de CPU em 22h (~260 mil processos por dia).
+# O unico fork por iteracao e o `sync -d`, que sincroniza SO este arquivo.
+#
 # Log: /var/log/hp-fan-forense.csv   (rotaciona em 20 MB, guarda 1 anterior)
 # ============================================================================
 set -u
-
-# Obrigatorio: em locales como pt_BR o awk imprime virgula decimal ("50,0"),
-# o que parte cada temperatura em dois campos e destroi o CSV.
 export LC_ALL=C
 
 LOG=${LOG:-/var/log/hp-fan-forense.csv}
@@ -24,57 +26,88 @@ INTERVALO=${INTERVALO:-5}
 MAXBYTES=${MAXBYTES:-20971520}
 
 acha_hwmon() {
-  local alvo=$1 h
+  local alvo=$1 h n
   for h in /sys/class/hwmon/hwmon*; do
-    [ "$(cat "$h/name" 2>/dev/null)" = "$alvo" ] && { echo "$h"; return 0; }
+    [ -r "$h/name" ] || continue
+    read -r n < "$h/name" || continue
+    [ "$n" = "$alvo" ] && { echo "$h"; return 0; }
   done
   return 1
 }
 
-HP=""; CPU=""; GPU=""; TZ=""; NVME=""
-for _ in $(seq 1 60); do
+HP=""; CPU=""
+for _ in {1..60}; do
   HP=$(acha_hwmon hp) && CPU=$(acha_hwmon k10temp) && break
   sleep 2
 done
 [ -n "$HP" ] && [ -n "$CPU" ] || { echo "hwmon indisponivel" >&2; exit 1; }
 GPU=$(acha_hwmon amdgpu) || GPU=""
-TZ=$(acha_hwmon acpitz)  || TZ=""
+TZS=$(acha_hwmon acpitz) || TZS=""
 NVME=$(acha_hwmon nvme)  || NVME=""
 
-AC=$(ls -d /sys/class/power_supply/A* 2>/dev/null | head -1)
-BAT=$(ls -d /sys/class/power_supply/BAT* 2>/dev/null | head -1)
+AC=""; for d in /sys/class/power_supply/A*; do [ -e "$d/online" ] && { AC=$d; break; }; done
+BAT=""; for d in /sys/class/power_supply/BAT*; do [ -e "$d/status" ] && { BAT=$d; break; }; done
+FREQ=/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq
 
-ler() { [ -n "$1" ] && cat "$1" 2>/dev/null || echo ""; }
-mc()  { local v; v=$(ler "$1"); [ -n "$v" ] && awk -v x="$v" 'BEGIN{printf "%.1f", x/1000}' || echo ""; }
+# Le um arquivo inteiro sem forkar. Devolve "" se nao existir.
+V=""
+leia() { V=""; [ -n "$1" ] && [ -r "$1" ] && read -r V < "$1" 2>/dev/null; }
+
+# milicelsius -> "NN.N" usando so aritmetica de inteiros (sem awk).
+T=""
+temp() {
+  T=""; leia "$1"; [ -n "$V" ] || return
+  local s="" m=$V
+  [ "$m" -lt 0 ] && { s="-"; m=$(( -m )); }
+  printf -v T '%s%d.%d' "$s" $(( m / 1000 )) $(( (m % 1000) / 100 ))
+}
 
 CAB='ts,tctl,gpu,acpitz,nvme,pwm1_enable,fan1,fan2,ac_online,bat_status,bat_capacity,cpu_mhz,load1'
-[ -s "$LOG" ] || { echo "$CAB" > "$LOG"; chmod 0644 "$LOG"; }
-echo "gravando em $LOG a cada ${INTERVALO}s (fsync por linha)"
+[ -s "$LOG" ] || { printf '%s\n' "$CAB" > "$LOG"; chmod 0644 "$LOG"; }
+# `sleep` e um binario externo: forkaria um processo por iteracao. Um `read`
+# com timeout num descritor que nunca recebe dados faz o mesmo usando builtin.
+exec {ESPERA}<> <(:) 2>/dev/null || ESPERA=""
+pausa() { if [ -n "${ESPERA:-}" ]; then read -r -t "$1" -u "$ESPERA" _ || :; else sleep "$1"; fi; }
+
+echo "gravando em $LOG a cada ${INTERVALO}s (fsync por linha, so builtins)"
+
+i=0
 
 while :; do
-  # rotaciona sem perder a linha corrente
-  if [ -f "$LOG" ] && [ "$(stat -c %s "$LOG" 2>/dev/null || echo 0)" -gt "$MAXBYTES" ]; then
-    mv -f "$LOG" "$LOG.1"; echo "$CAB" > "$LOG"; chmod 0644 "$LOG"
+  # Rotaciona se passar do tamanho maximo. Checa a cada 60 iteracoes (~5 min)
+  # para nao forkar um `stat` a cada leitura.
+  if (( i % 60 == 0 )) && [ -f "$LOG" ]; then
+    sz=$(stat -c %s "$LOG" 2>/dev/null || echo 0)
+    if (( sz > MAXBYTES )); then
+      mv -f "$LOG" "$LOG.1"; printf '%s\n' "$CAB" > "$LOG"; chmod 0644 "$LOG"
+    fi
   fi
+  (( i++ ))
+
+  printf -v ts '%(%Y-%m-%dT%H:%M:%S%z)T' -1
+
+  temp "$CPU/temp1_input";        tctl=$T
+  temp "${GPU:+$GPU/temp1_input}";   gpu=$T
+  temp "${TZS:+$TZS/temp1_input}";   tz=$T
+  temp "${NVME:+$NVME/temp1_input}"; nv=$T
+
+  leia "$HP/pwm1_enable";  pwm=$V
+  leia "$HP/fan1_input";   f1=$V
+  leia "$HP/fan2_input";   f2=$V
+  leia "${AC:+$AC/online}";        ac=$V
+  leia "${BAT:+$BAT/status}";      bs=$V
+  leia "${BAT:+$BAT/capacity}";    bc=$V
+  leia "$FREQ";            mhz=$(( ${V:-0} / 1000 ))
+  read -r l1 _ < /proc/loadavg
 
   printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
-    "$(date -Is)" \
-    "$(mc "$CPU/temp1_input")" \
-    "$([ -n "$GPU" ] && mc "$GPU/temp1_input")" \
-    "$([ -n "$TZ" ]  && mc "$TZ/temp1_input")" \
-    "$([ -n "$NVME" ] && mc "$NVME/temp1_input")" \
-    "$(ler "$HP/pwm1_enable")" \
-    "$(ler "$HP/fan1_input")" \
-    "$(ler "$HP/fan2_input")" \
-    "$([ -n "$AC" ] && ler "$AC/online")" \
-    "$([ -n "$BAT" ] && ler "$BAT/status")" \
-    "$([ -n "$BAT" ] && ler "$BAT/capacity")" \
-    "$(awk '{printf "%d", $1/1000}' /sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq 2>/dev/null)" \
-    "$(awk '{print $1}' /proc/loadavg)" \
+    "$ts" "$tctl" "$gpu" "$tz" "$nv" "$pwm" "$f1" "$f2" "$ac" "$bs" "$bc" "$mhz" "$l1" \
     >> "$LOG"
 
-  # forca a linha para o disco: sem isto ela se perde num corte instantaneo
-  sync -d "$LOG" 2>/dev/null || sync
+  # forca a linha para o disco: sem isto ela se perde num corte instantaneo.
+  # -d sincroniza APENAS este arquivo; nunca cair para `sync` global, que
+  # castigaria o sistema inteiro justamente sob pressao de I/O.
+  sync -d "$LOG" 2>/dev/null
 
-  sleep "$INTERVALO"
+  pausa "$INTERVALO"
 done
