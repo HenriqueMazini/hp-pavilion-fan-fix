@@ -11,6 +11,11 @@
 # desligamento, foi perda de alimentacao externa; se ficar em 1 ate o fim,
 # foi o EC ou o hardware que cortou.
 #
+# Tambem registra pressao de memoria (mem_avail_mb, swap_used_mb, pswpout),
+# porque falta de memoria e a outra causa plausivel de processo morto ou
+# sistema travado, e o pswpout acumulado responde se a maquina precisa de
+# mais RAM sem depender de estar olhando na hora certa.
+#
 # CUSTO: usa apenas builtins do bash (read, printf, aritmetica) para nao
 # forkar processos a cada leitura. A versao ingenua, com cat/awk/date por
 # campo, consumia ~1150s de CPU em 22h (~260 mil processos por dia).
@@ -62,8 +67,47 @@ temp() {
   printf -v T '%s%d.%d' "$s" $(( m / 1000 )) $(( (m % 1000) / 100 ))
 }
 
-CAB='ts,tctl,gpu,acpitz,nvme,pwm1_enable,fan1,fan2,ac_online,bat_status,bat_capacity,cpu_mhz,load1'
+# /proc/meminfo em MB, sem forkar: um `read` builtin por linha ate achar o
+# que interessa. MemAvailable e o numero que de fato prediz falta de memoria
+# (MemFree ignora o cache reclamavel e assusta a toa).
+MEMAVAIL=""; SWAPUSED=""
+meminfo() {
+  local k v st=0 sf=0 ma=0
+  while read -r k v _; do
+    case $k in
+      MemAvailable:) ma=$v ;;
+      SwapTotal:)    st=$v ;;
+      SwapFree:)     sf=$v; break ;;   # sempre vem logo apos SwapTotal
+    esac
+  done < /proc/meminfo
+  MEMAVAIL=$(( ma / 1024 ))
+  SWAPUSED=$(( (st - sf) / 1024 ))
+}
+
+# Contador ACUMULADO de paginas escritas em swap desde o boot. Diferente de
+# swap_used_mb, que e instantaneo: um pico de swap as 15h volta a zero e
+# some, o pswpout nao. E o criterio honesto para decidir upgrade de RAM.
+PSWPOUT=""
+pswpout_ler() {
+  local k v
+  PSWPOUT=0
+  while read -r k v; do
+    case $k in pswpout) PSWPOUT=$v; break ;; esac
+  done < /proc/vmstat
+}
+
+CAB='ts,tctl,gpu,acpitz,nvme,pwm1_enable,fan1,fan2,ac_online,bat_status,bat_capacity,cpu_mhz,load1,mem_avail_mb,swap_used_mb,pswpout'
+
+# Se o cabecalho mudou (versao nova deste script), rotaciona antes de gravar.
+# Misturar dois esquemas no mesmo CSV quebraria qualquer leitura posterior --
+# justamente no arquivo cuja unica razao de existir e ser lido depois de um
+# desastre.
+if [ -s "$LOG" ]; then
+  read -r velho < "$LOG" || velho=""
+  [ "$velho" = "$CAB" ] || mv -f "$LOG" "$LOG.1"
+fi
 [ -s "$LOG" ] || { printf '%s\n' "$CAB" > "$LOG"; chmod 0644 "$LOG"; }
+
 # `sleep` e um binario externo: forkaria um processo por iteracao. Um `read`
 # com timeout num descritor que nunca recebe dados faz o mesmo usando builtin.
 exec {ESPERA}<> <(:) 2>/dev/null || ESPERA=""
@@ -99,9 +143,12 @@ while :; do
   leia "${BAT:+$BAT/capacity}";    bc=$V
   leia "$FREQ";            mhz=$(( ${V:-0} / 1000 ))
   read -r l1 _ < /proc/loadavg
+  meminfo
+  pswpout_ler
 
-  printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
+  printf '%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n' \
     "$ts" "$tctl" "$gpu" "$tz" "$nv" "$pwm" "$f1" "$f2" "$ac" "$bs" "$bc" "$mhz" "$l1" \
+    "$MEMAVAIL" "$SWAPUSED" "$PSWPOUT" \
     >> "$LOG"
 
   # forca a linha para o disco: sem isto ela se perde num corte instantaneo.
