@@ -2,14 +2,16 @@
 # ============================================================================
 # hp-fan-forense - registrador de caixa-preta.
 #
-# Desligamentos abruptos (corte do EC, queda de energia, falha de hardware)
-# nao deixam rastro no journal: ele simplesmente para. Este daemon grava uma
-# linha CSV a cada 5s e faz fsync no arquivo, para que a ultima linha
-# sobreviva a um corte instantaneo.
+# Travamentos e desligamentos abruptos (corte do EC, queda de energia, falha
+# de hardware) nao deixam rastro no journal: ele simplesmente para. Este
+# daemon grava uma linha CSV a cada 5s e faz fsync no arquivo, para que a
+# ultima linha sobreviva a um corte ou a um travamento.
 #
-# O campo que mais importa e o ac_online: se ele cair para 0 antes do
-# desligamento, foi perda de alimentacao externa; se ficar em 1 ate o fim,
-# foi o EC ou o hardware que cortou.
+# ATENCAO: o CSV sozinho nao distingue travamento de corte -- nos dois casos
+# a ultima linha e normal e depois nao ha nada. Quem distingue e o LED do
+# botao power: aceso = travamento (a energia nao foi cortada). So com o LED
+# apagado o ac_online decide: se cair para 0 antes, foi perda de alimentacao
+# externa; se ficar em 1 ate o fim, foi o EC ou o hardware que cortou.
 #
 # Tambem registra pressao de memoria (mem_avail_mb, swap_used_mb, pswpout),
 # porque falta de memoria e a outra causa plausivel de processo morto ou

@@ -1,23 +1,29 @@
 # Caixa-preta
 
-Desligamentos abruptos — corte do EC, queda de energia, falta de memória, falha de
-hardware — **não deixam rastro no journal**: ele simplesmente para no meio. Este daemon
-grava uma linha CSV a cada 5 s e faz `fsync` no arquivo, para que a última linha
-sobreviva a um corte instantâneo.
+Travamentos e desligamentos abruptos — corte do EC, queda de energia, falta de memória,
+falha de hardware — **não deixam rastro no journal**: ele simplesmente para no meio. Este
+daemon grava uma linha CSV a cada 5 s e faz `fsync` no arquivo, para que a última linha
+sobreviva a um corte ou a um travamento.
 
 Vale instalar **mesmo com a ventoinha funcionando**: ele não toca no controle do fan,
-custa ~4 min de CPU por dia, e é a diferença entre o próximo desligamento virar
+custa ~4 min de CPU por dia, e é a diferença entre o próximo evento virar
 informação ou virar mais um episódio sem explicação.
 
 ## O que cada campo responde
 
-**Energia — o campo decisivo é `ac_online`:**
+**Travamento ou corte — a primeira pergunta não está no CSV.** Nos dois casos a última
+linha é normal e depois não há nada. Quem distingue é o LED do botão power:
 
-| Comportamento antes do corte | Conclusão |
+| O que se vê | Conclusão |
 |---|---|
-| `ac_online` cai para `0` | perda de alimentação externa (tomada, fonte, cabo) |
-| `ac_online` fica em `1` até a última linha | o **EC ou o hardware** cortou a energia |
+| LED do power **aceso**, telas e USB mortas | **travamento** — a energia não foi cortada |
+| LED **apagado**, `ac_online` cai para `0` antes | perda de alimentação externa (tomada, fonte, cabo) |
+| LED **apagado**, `ac_online` em `1` até a última linha | o **EC ou o hardware** cortou a energia |
 | `tctl` subindo forte na última linha | térmico |
+
+Num travamento, a caixa-preta mostra o estado da máquina até o fim, mas não o que travou.
+Para isso, arme o vigia de travamento do kernel — ver
+[Travamentos](../README.md#travamentos-o-problema-que-continua-aberto) no README principal.
 
 **Memória — a outra causa plausível de processo morto ou sistema travado:**
 

@@ -23,7 +23,7 @@ incluindo o caso em que ela **também não gira dentro do BIOS**, mesmo com
 - [A mitigação: `hp-fan-curve`](#a-mitigação-hp-fan-curve)
 - [A caixa-preta forense](#a-caixa-preta-forense)
 - [Scripts de diagnóstico](#scripts-de-diagnóstico)
-- [Desligamentos abruptos: o problema que continua aberto](#desligamentos-abruptos-o-problema-que-continua-aberto)
+- [Travamentos: o problema que continua aberto](#travamentos-o-problema-que-continua-aberto)
 - [O tacômetro: defeito real, mas não era a causa](#o-tacômetro-defeito-real-mas-não-era-a-causa)
 - [O que foi descartado, e por quê](#o-que-foi-descartado-e-por-quê)
 - [Armadilhas que custaram tempo](#armadilhas-que-custaram-tempo)
@@ -130,7 +130,8 @@ driver (perfis térmicos, e no caso do Victus S até `pwm1` proporcional).
 ## Sintomas
 
 - Ventoinha completamente parada, mesmo sob carga pesada
-- Notebook **desliga sozinho**
+- Notebook **trava**: telas e mouse apagam, mas o LED do power continua aceso — parece
+  desligamento, [e não é](#travamentos-o-problema-que-continua-aberto)
 - `sensors` mostra `fan1: 0 RPM` e `fan2: 0 RPM`
 - **A ventoinha também não gira dentro do BIOS/UEFI**, com `Fan Always On = Enabled`
 - Reset de CMOS/EC pelo procedimento curto não resolve
@@ -326,21 +327,25 @@ voltou: desinstale.
 
 ## A caixa-preta forense
 
-Desligamentos abruptos **não deixam rastro no journal** — ele simplesmente para no meio.
-O daemon em [`forense/`](forense/) grava uma linha CSV a cada 5 s com `fsync`, para que a
-última linha sobreviva a um corte instantâneo.
+Travamentos e desligamentos abruptos **não deixam rastro no journal** — ele simplesmente
+para no meio. O daemon em [`forense/`](forense/) grava uma linha CSV a cada 5 s com
+`fsync`, para que a última linha sobreviva a um corte ou a um travamento.
 
 **Instale isto mesmo que a sua ventoinha esteja funcionando.** Ele não toca no controle
 da ventoinha, custa quase nada em CPU (só builtins de bash; o único fork por iteração é o
-`sync -d`), e é a única forma de transformar o próximo desligamento em informação em vez
-de mais um episódio sem explicação.
+`sync -d`), e é a única forma de transformar o próximo evento em informação em vez de
+mais um episódio sem explicação.
 
-O campo decisivo é **`ac_online`**:
+**O CSV sozinho não distingue travamento de corte de energia**: nos dois casos a última
+linha é normal e depois não há nada. Quem distingue é o LED do botão power — uma
+observação de dois segundos que nenhum log guarda. Por isso a primeira pergunta não está
+no CSV:
 
-| Comportamento antes do corte | Conclusão |
+| O que se vê | Conclusão |
 |---|---|
-| `ac_online` cai para `0` | perda de alimentação externa (tomada, fonte, cabo) |
-| `ac_online` fica em `1` até a última linha | o **EC ou o hardware** cortou a energia |
+| LED do power **aceso**, telas e USB mortas | **travamento** — a energia não foi cortada ([ver abaixo](#travamentos-o-problema-que-continua-aberto)) |
+| LED **apagado**, `ac_online` cai para `0` antes | perda de alimentação externa (tomada, fonte, cabo) |
+| LED **apagado**, `ac_online` em `1` até a última linha | o **EC ou o hardware** cortou a energia |
 | `tctl` subindo forte na última linha | térmico |
 
 Instruções em [`forense/README.md`](forense/README.md).
@@ -367,12 +372,21 @@ Os testes de carga têm, **sempre ativas**: aborto automático por temperatura (
 põe a ventoinha em máximo, espera de resfriamento antes de começar, e teto rígido de
 duração. A carga é um laço de inteiros puro, deliberadamente mais branda que `stress-ng`.
 
-## Desligamentos abruptos: o problema que continua aberto
+## Travamentos: o problema que continua aberto
 
-Os desligamentos **persistiram mesmo com a ventoinha comprovadamente em máximo**. Isso
-nunca foi explicado, e é o item mais perigoso que restou.
+O problema que continua aberto nesta máquina **não é desligamento — é travamento**. Este
+README passou semanas afirmando o contrário.
 
-Uma descoberta nova reduz bastante o espaço de busca. A thermal zone desta máquina expõe
+O sintoma, igual em todos os episódios desde o começo — na época da ventoinha parada,
+depois com ela comprovadamente em máximo, e depois do reset do EC: **as telas apagam, o
+mouse apaga, mas o LED do botão power continua aceso.** A máquina segue energizada e só
+sai dali segurando o botão. Ninguém cortou energia: o processador inteiro parou, e vídeo e
+USB caíram junto com ele.
+
+### O que estava errado aqui antes
+
+A versão anterior desta seção concluía que o EC cortava a energia por conta própria. O
+raciocínio partia de um fato que continua verdadeiro — a thermal zone desta máquina expõe
 só dois trip points:
 
 ```
@@ -386,27 +400,88 @@ trip_point_1_type = passive  trip_point_1_temp =  98000
 ACPI: thermal: [Firmware Bug]: Invalid critical threshold (-274000)
 ```
 
-O `_CRT` da BIOS devolve lixo — −274 °C fica abaixo do zero absoluto. Consequência
-direta: **o Linux nunca teve como desligar esta máquina por temperatura.** Todo
-desligamento abrupto foi o EC ou o hardware cortando energia por conta própria, com o
-sistema operacional fora do circuito.
+O `_CRT` da BIOS devolve lixo — −274 °C fica abaixo do zero absoluto — e por isso **o
+Linux não tem como desligar esta máquina por temperatura.** Isso continua valendo, e
+continua sendo um risco: a única proteção térmica que sobra é a do próprio EC.
 
-Isso explica duas coisas que antes não faziam sentido: a ausência total de rastro no
-journal, e o fato de trocar de distro não ter resolvido — nunca teve como resolver.
+O salto errado foi "o Linux não desligou, logo o EC cortou". Com o LED aceso, ninguém
+desligou nada. A tese se sustentou enquanto ninguém perguntou o que acontecia com o LED.
 
-Candidatos que restam, e o que cada um deixaria no CSV da caixa-preta:
+### Por que a caixa-preta não viu a diferença
 
-| Candidato | Assinatura em `hp-fan-forense.csv` |
+Travamento e corte de energia deixam **a mesma assinatura** no CSV: a última linha é
+normal e depois não há nada. O `ac_online` em `1` até o fim, que antes era lido como "o
+EC cortou", aparece igual num travamento. E nesta máquina ele informa ainda menos, porque
+ela passa 98,6% do tempo na tomada.
+
+Dois episódios registrados pela caixa-preta:
+
+| Última linha do CSV | Tctl | GPU | Tomada | RAM disponível | load |
+|---|---|---|---|---|---|
+| 15/set 20:50:27 | 77,8 °C | 77 °C | sim, carregando | 12,8 GB | 1,63 |
+| 18/set 12:51:32 | 54,3 °C | 45 °C | sim, bateria cheia | 11,3 GB | 1,16 |
+
+Nos dois: nenhum MCE ou erro de hardware no log do kernel, `pstore` vazio, nenhuma
+sequência de desligamento no journal, `pswpout` parado. Não foi calor, não foi falta de
+memória e, com o LED aceso, não foi energia.
+
+**O horário do journal engana.** Em 18/set o journal termina às 12:50:17, mas a
+caixa-preta gravou até 12:51:32. Por padrão o `journald` segura mensagens até 5 minutos
+na memória antes de gravar (`SyncIntervalSec`); num travamento resolvido no botão, esse
+último trecho se perde. O horário do evento é a última linha do CSV.
+
+### Suspeitos que restam
+
+Só fica na lista o que esteve presente em **todos** os episódios:
+
+| Suspeito | Por que continua na lista |
 |---|---|
-| Corte térmico do próprio EC | `tctl` alto e subindo na última linha |
-| Perda de alimentação externa | `ac_online` indo a `0` |
-| Bateria / caminho de energia | `ac_online=0`, `bat_status`/`capacity` inconsistentes |
-| Corte do EC não-térmico | `ac_online=1`, `tctl` baixo — o cenário mais preocupante |
+| Processador (Ryzen 7 7730U) e firmware — BIOS, SMU/PSP, EC | presente em todos os episódios, e é a camada onde um travamento derruba vídeo e USB ao mesmo tempo |
+| Driver `amdgpu` / kernel | um travamento da GPU integrada pode levar o sistema junto — e o último minuto de log, onde ele apareceria, é justamente o que se perde |
+| O pente de RAM original que ficou | a RAM passou de 2 × 8 GB para 8 + 16 GB e os travamentos continuaram. Isso descarta a *mistura* de pentes, mas não o Samsung de 8 GB que permaneceu no slot 1 |
 
-**Uma lição de método:** a reinstalação apagou o disco inteiro e com ele todo o histórico
-— journal, `wtmp`, e o CSV da caixa-preta. Semanas de sintoma viraram zero evidência.
-Se você está caçando um desligamento intermitente, **formatar destrói justamente o que
-você precisa.** Instale a caixa-preta antes.
+### Como separar os suspeitos
+
+Por padrão o kernel detecta CPU travada (`nmi_watchdog=1`), mas só **avisa** — e o aviso
+se perde junto com o resto. Armado, o vigia transforma o travamento em pane, a pane é
+gravada pelo firmware (`efi_pstore`) e a máquina reinicia sozinha:
+
+```bash
+# vigia de travamento: vira pane, grava no pstore, reinicia em 10 s
+printf 'kernel.softlockup_panic = 1\nkernel.hardlockup_panic = 1\nkernel.panic = 10\n' \
+  | sudo tee /etc/sysctl.d/99-caixa-preta.conf
+sudo sysctl -p /etc/sysctl.d/99-caixa-preta.conf
+
+# journald grava no máximo a cada 15 s, em vez de 5 min
+sudo mkdir -p /etc/systemd/journald.conf.d
+printf '[Journal]\nSyncIntervalSec=15s\n' | sudo tee /etc/systemd/journald.conf.d/caixa-preta.conf
+sudo systemctl restart systemd-journald
+```
+
+Para desfazer, apague os dois arquivos. Se o `sudo` não tiver um terminal para pedir a
+senha, ponha os comandos num script e rode com `pkexec sh script.sh`.
+
+O próximo travamento responde:
+
+| O que acontece | Conclusão | Próximo passo |
+|---|---|---|
+| Reinicia sozinho em ~10 s e deixa arquivo em `/var/lib/systemd/pstore/` | o kernel viu o travamento — driver ou software | ler o dump, que diz onde parou |
+| Trava como sempre: LED aceso, sem reiniciar, `pstore` vazio | travou abaixo do kernel — RAM, processador ou firmware | memtest86+; se a RAM passar, a [BIOS F.07](#bios) |
+
+Sobre o memtest86+: com Secure Boot ligado ele pode não iniciar — desligue
+temporariamente no setup da BIOS (F10) e religue depois. No Ubuntu o menu do GRUB fica
+oculto por padrão; aperte Esc logo depois do logo da HP para vê-lo.
+
+**Duas lições de método.**
+
+A reinstalação apagou o disco inteiro e com ele todo o histórico — journal, `wtmp` e o
+CSV da caixa-preta. Semanas de sintoma viraram zero evidência. Se você está caçando um
+problema intermitente, **formatar destrói justamente o que você precisa.** Instale a
+caixa-preta antes.
+
+E antes de concluir qualquer coisa sobre um "desligamento", **pergunte o que aconteceu
+com o LED**. É uma observação de dois segundos, não fica em log nenhum, e sozinha derrubou
+a tese central desta seção.
 
 ## O tacômetro: defeito real, mas não era a causa
 
@@ -502,11 +577,14 @@ Supersede : SP154164 (F.06, 08BC7F06.bin)
   `EFI\Hewlett-Packard\BIOS\New\08BC7F07.bin` + `.sig`
 - HP não publica Pavilion no LVFS, então `fwupdmgr` não encontra esta atualização
 
-**Quando atualizar:** o firmware do EC é o único componente que roda na camada onde o
-problema aconteceu, então a F.07 é uma carta legítima a jogar — mas **não numa máquina
-que está funcionando**, e muito menos numa que teve desligamentos abruptos sem
-explicação. Um corte de energia no meio da gravação deixa você sem máquina. Guarde para
-se o EC travar de novo.
+**Quando atualizar:** a BIOS carrega o firmware do EC e do processador, que são suspeitos
+tanto da ventoinha parada quanto dos [travamentos](#travamentos-o-problema-que-continua-aberto).
+A F.07 é uma carta legítima, mas **não numa máquina que está funcionando**. Um travamento
+no meio da gravação, que obriga a desligar no botão, deixa você sem máquina. A gravação
+roda fora do Linux, então um travamento de driver ou de kernel não chega a ela — o risco é
+o travamento vir de RAM, processador ou firmware. Guarde a F.07 para dois casos: o EC
+travar a ventoinha de novo, ou o vigia de travamento mostrar que o problema está abaixo
+do kernel **e** a RAM passar no memtest.
 
 ## Segurança
 
