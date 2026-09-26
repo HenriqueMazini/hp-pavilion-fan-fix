@@ -117,7 +117,8 @@ Sistema onde o diagnóstico foi feito:
 | CPU | AMD Ryzen 7 7730U |
 | BIOS | F.05 (24/04/2024), AMI |
 | SO na época do diagnóstico | Ubuntu 26.04 LTS, kernel 7.0.0-29 |
-| SO atual | Zorin OS 18.1 (base 24.04), kernel 7.0.0-30 |
+| SO atual | Ubuntu 26.04 (reinstalado em 22/set), kernel 7.0.0-34 |
+| RAM atual | 16 + 32 GB (nenhum pente original) |
 | Driver | `hp-wmi` (`/sys/class/hwmon/hwmonN` com `name=hp`) |
 
 **Os scripts de diagnóstico são genéricos** e resolvem tudo por nome de sensor. A
@@ -414,21 +415,38 @@ normal e depois não há nada. O `ac_online` em `1` até o fim, que antes era li
 EC cortou", aparece igual num travamento. E nesta máquina ele informa ainda menos, porque
 ela passa 98,6% do tempo na tomada.
 
-Dois episódios registrados pela caixa-preta:
+Episódios registrados pela caixa-preta:
 
 | Última linha do CSV | Tctl | GPU | Tomada | RAM disponível | load |
 |---|---|---|---|---|---|
 | 15/set 20:50:27 | 77,8 °C | 77 °C | sim, carregando | 12,8 GB | 1,63 |
 | 18/set 12:51:32 | 54,3 °C | 45 °C | sim, bateria cheia | 11,3 GB | 1,16 |
+| 26/set 15:34:18 | 66,0 °C | 56 °C | sim, carregando | 22,0 GB | 1,47 |
 
-Nos dois: nenhum MCE ou erro de hardware no log do kernel, `pstore` vazio, nenhuma
+Um terceiro episódio, em 24/set, veio depois de reinstalar o Ubuntu e trocar **toda** a
+RAM (agora 16 + 32 GB). Não há CSV: a reinstalação desfez a caixa-preta e o vigia. O
+journal termina às 01:15:15, com o Docker subindo containers. Às 00:36 o firmware do
+Wi-Fi (RTL8852BE) tinha travado pela segunda vez naquele boot.
+
+Em todos os episódios com CSV: nenhum MCE ou erro de hardware no log do kernel, `pstore` vazio, nenhuma
 sequência de desligamento no journal, `pswpout` parado. Não foi calor, não foi falta de
 memória e, com o LED aceso, não foi energia.
 
 **O horário do journal engana.** Em 18/set o journal termina às 12:50:17, mas a
 caixa-preta gravou até 12:51:32. Por padrão o `journald` segura mensagens até 5 minutos
 na memória antes de gravar (`SyncIntervalSec`); num travamento resolvido no botão, esse
-último trecho se perde. O horário do evento é a última linha do CSV.
+último trecho se perde. O horário do evento é a última linha do CSV. Com
+`SyncIntervalSec=15s`, em 26/set o journal parou só 4 s antes do CSV.
+
+### 26/set: o vigia armado não disparou
+
+O episódio de 26/set foi o primeiro com o [vigia de travamento](#como-separar-os-suspeitos)
+armado (`hardlockup_panic=1`, `NMI watchdog: Enabled` no boot) e a mitigação do Wi-Fi
+ativa. A máquina **não reiniciou sozinha** e o `pstore` ficou vazio.
+
+O NMI é uma interrupção que a CPU atende mesmo com o kernel travado. Se nem ele rodou, o
+travamento foi **abaixo do kernel**: o processador inteiro parou. Isso descarta travamento
+de software — kernel, `amdgpu`, Docker, qualquer processo —, que o vigia teria pegado.
 
 ### Suspeitos que restam
 
@@ -437,8 +455,14 @@ Só fica na lista o que esteve presente em **todos** os episódios:
 | Suspeito | Por que continua na lista |
 |---|---|
 | Processador (Ryzen 7 7730U) e firmware — BIOS, SMU/PSP, EC | presente em todos os episódios, e é a camada onde um travamento derruba vídeo e USB ao mesmo tempo |
-| Driver `amdgpu` / kernel | um travamento da GPU integrada pode levar o sistema junto — e o último minuto de log, onde ele apareceria, é justamente o que se perde |
-| O pente de RAM original que ficou | a RAM passou de 2 × 8 GB para 8 + 16 GB e os travamentos continuaram. Isso descarta a *mistura* de pentes, mas não o Samsung de 8 GB que permaneceu no slot 1 |
+| Wi-Fi Realtek RTL8852BE (`rtw89`) — **enfraquecido** | presente em todos os episódios; o firmware travou duas vezes no boot de 24/set, 40 min antes do travamento. Com a mitigação ativa (`rtw89_pci disable_aspm_l1=y disable_aspm_l1ss=y disable_clkreq=y` e `rtw89_core disable_ps_mode=y` em `/etc/modprobe.d/`), o firmware ainda travou uma vez, em 24/set 19:41, se recuperou, e a máquina rodou mais 44 h antes de travar sem nenhum erro de Wi-Fi por perto. Não sai da lista porque um dispositivo PCIe travado também pode parar o barramento abaixo do kernel |
+
+**Descartado: os pentes de RAM.** A RAM passou de 2 × 8 GB para 8 + 16 GB, e depois para
+16 + 32 GB, sem nenhum pente original. Os travamentos continuaram nas três configurações.
+O controlador de memória fica dentro do processador, então ele segue no primeiro suspeito.
+
+**Descartado: `amdgpu` e kernel.** Um travamento de software seria pego pelo vigia, e em
+26/set ele [não disparou](#26set-o-vigia-armado-não-disparou).
 
 ### Como separar os suspeitos
 
@@ -466,7 +490,28 @@ O próximo travamento responde:
 | O que acontece | Conclusão | Próximo passo |
 |---|---|---|
 | Reinicia sozinho em ~10 s e deixa arquivo em `/var/lib/systemd/pstore/` | o kernel viu o travamento — driver ou software | ler o dump, que diz onde parou |
-| Trava como sempre: LED aceso, sem reiniciar, `pstore` vazio | travou abaixo do kernel — RAM, processador ou firmware | memtest86+; se a RAM passar, a [BIOS F.07](#bios) |
+| Trava como sempre: LED aceso, sem reiniciar, `pstore` vazio | travou abaixo do kernel — processador, firmware ou um dispositivo PCIe (Wi-Fi) | se já estiver com a mitigação do Wi-Fi, a [BIOS F.07](#bios) |
+
+### Teste em andamento: `processor.max_cstate=1`
+
+Desde 26/set, antes de arriscar a BIOS F.07 (irreversível), está em teste uma mudança
+barata e reversível: limitar o processador ao estado ocioso C1. Travamento total ao
+entrar ou sair dos estados mais profundos (C2/C3) é uma causa conhecida em Ryzen. Nesta
+máquina o driver de idle é o `acpi_idle`, que é o que respeita esse parâmetro.
+
+```bash
+echo 'GRUB_CMDLINE_LINUX_DEFAULT="$GRUB_CMDLINE_LINUX_DEFAULT processor.max_cstate=1"' \
+  | sudo tee /etc/default/grub.d/99-max-cstate.cfg
+sudo update-grub   # e reiniciar
+# conferir: só devem existir POLL e C1
+grep . /sys/devices/system/cpu/cpu0/cpuidle/state*/name
+```
+
+Para desfazer: `sudo rm /etc/default/grub.d/99-max-cstate.cfg && sudo update-grub`.
+
+O custo é um pouco mais de calor e consumo em repouso. Os travamentos vinham a cada 1–2
+dias, então o critério é **uma semana sem travar**. Se travar de novo com o C-state
+limitado, o próximo passo é a [BIOS F.07](#bios).
 
 Sobre o memtest86+: com Secure Boot ligado ele pode não iniciar — desligue
 temporariamente no setup da BIOS (F10) e religue depois. No Ubuntu o menu do GRUB fica
