@@ -115,7 +115,7 @@ Sistema onde o diagnóstico foi feito:
 | Modelo | HP Pavilion Laptop 15-eh3xxx |
 | System Board ID | **8BC7** |
 | CPU | AMD Ryzen 7 7730U |
-| BIOS | F.05 (24/04/2024), AMI |
+| BIOS | **F.07** (16/10/2024), AMI — atualizada em 27/set/2026; o diagnóstico foi feito na F.05 |
 | SO na época do diagnóstico | Ubuntu 26.04 LTS, kernel 7.0.0-29 |
 | SO atual | Ubuntu 26.04 (reinstalado em 22/set), kernel 7.0.0-34 |
 | RAM atual | 16 + 32 GB (nenhum pente original) |
@@ -422,6 +422,13 @@ Episódios registrados pela caixa-preta:
 | 15/set 20:50:27 | 77,8 °C | 77 °C | sim, carregando | 12,8 GB | 1,63 |
 | 18/set 12:51:32 | 54,3 °C | 45 °C | sim, bateria cheia | 11,3 GB | 1,16 |
 | 26/set 15:34:18 | 66,0 °C | 56 °C | sim, carregando | 22,0 GB | 1,47 |
+| 27/set 09:39:49 | 54,5 °C | 46 °C | sim, bateria cheia | 29,7 GB | 1,16 |
+| 27/set 19:53:42 | 50,2 °C | 45 °C | sim, carregando | 37,2 GB | 0,71 |
+
+Nenhum episódio aconteceu com a CPU sob esforço. Nos momentos de carga alta (até 99 °C)
+a máquina não travou; todos os travamentos foram com carga abaixo de 1,5 — menos de um
+núcleo ocupado de 16. Isso vai contra a ideia de que a máquina trava "por excesso de
+processamento", e por isso limitar a frequência não foi testado.
 
 Um terceiro episódio, em 24/set, veio depois de reinstalar o Ubuntu e trocar **toda** a
 RAM (agora 16 + 32 GB). Não há CSV: a reinstalação desfez a caixa-preta e o vigia. O
@@ -492,9 +499,9 @@ O próximo travamento responde:
 | Reinicia sozinho em ~10 s e deixa arquivo em `/var/lib/systemd/pstore/` | o kernel viu o travamento — driver ou software | ler o dump, que diz onde parou |
 | Trava como sempre: LED aceso, sem reiniciar, `pstore` vazio | travou abaixo do kernel — processador, firmware ou um dispositivo PCIe (Wi-Fi) | se já estiver com a mitigação do Wi-Fi, a [BIOS F.07](#bios) |
 
-### Teste em andamento: `processor.max_cstate=1`
+### Testado e descartado: `processor.max_cstate=1`
 
-Desde 26/set, antes de arriscar a BIOS F.07 (irreversível), está em teste uma mudança
+Em 26/set, antes de arriscar a BIOS F.07 (irreversível), foi testada uma mudança
 barata e reversível: limitar o processador ao estado ocioso C1. Travamento total ao
 entrar ou sair dos estados mais profundos (C2/C3) é uma causa conhecida em Ryzen. Nesta
 máquina o driver de idle é o `acpi_idle`, que é o que respeita esse parâmetro.
@@ -509,9 +516,18 @@ grep . /sys/devices/system/cpu/cpu0/cpuidle/state*/name
 
 Para desfazer: `sudo rm /etc/default/grub.d/99-max-cstate.cfg && sudo update-grub`.
 
-O custo é um pouco mais de calor e consumo em repouso. Os travamentos vinham a cada 1–2
-dias, então o critério é **uma semana sem travar**. Se travar de novo com o C-state
-limitado, o próximo passo é a [BIOS F.07](#bios).
+**Resultado: não resolveu.** Com o parâmetro ativo (só POLL e C1 disponíveis), a máquina
+travou em 27/set às 09:39, depois de ~16 h, do mesmo jeito: vigia armado sem disparar,
+`pstore` vazio, nenhum erro de Wi-Fi no boot inteiro. O parâmetro foi removido e o passo
+seguinte foi a [BIOS F.07](#bios).
+
+### Em teste: BIOS F.07
+
+Aplicada em 27/set, depois do segundo travamento do dia. A nota de versão da HP diz só
+*"Provides improved system stability"*. Continuam ativos a mitigação do Wi-Fi, o vigia e
+a caixa-preta. O critério é **uma semana sem travar**. Se travar na F.07, o que sobra é
+defeito físico — placa-mãe ou processador — e o caminho é assistência técnica, com este
+README e o CSV da caixa-preta como histórico do caso.
 
 Sobre o memtest86+: com Secure Boot ligado ele pode não iniciar — desligue
 temporariamente no setup da BIOS (F10) e religue depois. No Ubuntu o menu do GRUB fica
@@ -566,7 +582,7 @@ done
 | **Regressão de kernel** | Descartada duas vezes: a ventoinha não girava dentro do BIOS, e depois o mesmo kernel produziu comportamento oposto |
 | **`platform_profile` ausente** | Normal. O `hp-wmi` só registra perfil térmico para boards nas listas DMI Omen/Victus (8BC7 não está) ou se a WMI `0x4c` responder. O módulo aparecer no `lsmod` é só dependência de símbolo do `hp_wmi`, não registro de perfil |
 | **`hp-wmi-sensors` não carregar** | Esperado. Os GUIDs `8F1F6435/6436-…` aparecem no log como `has zero instances` — são das linhas comerciais (EliteBook/ProBook) |
-| **Erros `AE_AML_BUFFER_LIMIT` em `WQBZ`/`WQBE`** | **Não têm relação com a ventoinha.** São do `hp_bioscfg` enumerando settings da BIOS — o log traz `hp_bioscfg: Returned error 0x3` na linha seguinte, e `/sys/class/firmware-attributes/hp-bioscfg/attributes/` fica quase vazio. É um off-by-one de AML na F.05 (índice `0x32` num objeto de comprimento `0x32`) |
+| **Erros `AE_AML_BUFFER_LIMIT` em `WQBZ`/`WQBE`** | **Não têm relação com a ventoinha.** São do `hp_bioscfg` enumerando settings da BIOS — o log traz `hp_bioscfg: Returned error 0x3` na linha seguinte, e `/sys/class/firmware-attributes/hp-bioscfg/attributes/` fica quase vazio. É um off-by-one de AML na F.05 (índice `0x32` num objeto de comprimento `0x32`), que persiste na F.07 |
 | **Aletas entupidas / pasta térmica** | Descartadas pela calorimetria: se a dissipação fosse o gargalo, o modo máximo não daria 8–11 °C de ganho |
 | **Ventoinha, alimentação, MOSFET, conector de força** | Íntegros: ela gira quando comandada |
 | **Tacômetro morto como causa da ventoinha parada** | **Falsificado.** Tacômetro segue em `0` e a ventoinha voltou a funcionar |
@@ -616,11 +632,30 @@ Supersede : SP154164 (F.06, 08BC7F06.bin)
 - CVA: `https://ftp.hp.com/pub/softpaq/sp155501-156000/sp155619.cva`
 - O SHA-256 do `.exe` confere com o declarado no CVA
 - ⚠️ **É irreversível**: *"previous BIOS versions cannot be reinstalled after this BIOS update"*
-- Sem Windows, o caminho é `Win+B` (recovery) ou extrair o SoftPaq (o `cabextract` não
-  basta; é preciso p7zip ou rodar o `BIOS_Update.EXE` no Wine para gerar o pendrive de
-  recuperação). A estrutura esperada no pendrive é
-  `EFI\Hewlett-Packard\BIOS\New\08BC7F07.bin` + `.sig`
+- **Extrair o `.bin` no Linux não funciona.** O 7-Zip abre o `sp155619.exe` e o
+  `BIOS_Update.EXE` de dentro dele, mas a imagem da BIOS está num contêiner proprietário
+  da HP (assinatura `@HPU`, blocos `@NAL` compactados) que nenhuma ferramenta comum abre.
+  Montar o pendrive à mão, com risco de gravar um arquivo errado, não vale a pena
 - HP não publica Pavilion no LVFS, então `fwupdmgr` não encontra esta atualização
+
+### Como foi aplicada
+
+1. Baixar `sp155619.exe` e conferir o SHA-256 contra o CVA:
+   `476ffb2de4d870de9162003766ae30410a050ec3589327f2ad588b1a3646c352`
+2. Num PC com Windows, rodar o `.exe` e escolher **"Create Recovery USB flash drive"**
+   — **não** "Update", que tentaria gravar no PC errado. O utilitário apaga o pendrive,
+   então rode o `.exe` a partir da Área de Trabalho, não de dentro do próprio pendrive
+3. No notebook desligado e na tomada, com o pendrive espetado: segurar `Win`+`B`,
+   apertar Power 2–3 s, soltar só o Power e manter `Win`+`B` até a tela de recuperação
+4. Não mexer até reiniciar sozinho. Depois, conferir `/sys/class/dmi/id/bios_version`
+   e revisar o F10 — `Fan Always On` precisa continuar `Enabled`
+
+Um pendrive gravado com a imagem de instalação do Ubuntu parece "protegido contra
+gravação" no Windows: é o sistema de arquivos `iso9660`, que é só leitura. `wipefs -a` +
+uma partição FAT32 nova resolvem.
+
+A F.07 **não** corrige o `_CRT` inválido (`Invalid critical threshold (-274000)` continua
+no boot) nem o `AE_AML_BUFFER_LIMIT` do `hp_bioscfg`.
 
 **Quando atualizar:** a BIOS carrega o firmware do EC e do processador, que são suspeitos
 tanto da ventoinha parada quanto dos [travamentos](#travamentos-o-problema-que-continua-aberto).
