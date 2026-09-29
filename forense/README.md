@@ -54,6 +54,22 @@ tail -20 /var/log/hp-fan-forense.csv     # os últimos ~100 s antes do corte
 column -s, -t /var/log/hp-fan-forense.csv | tail -20
 ```
 
+**Não pare na última linha.** Num travamento a CPU pode estar fria no fim e ter passado
+de 95 °C meia hora antes. Olhe pelo menos a hora anterior:
+
+```bash
+# maior tctl e maior carga na hora antes do travamento
+fim=2026-09-27T19:53:42
+LC_ALL=C awk -F, -v ini="$(date -d "$fim -1 hour" +%FT%T)" -v fim="$fim" \
+  'NR>1 && $1>=ini && $1<=fim {if($2+0>t){t=$2+0; q=$1} if($13+0>l)l=$13+0}
+   END{printf "tctl max %.1f C em %s | carga max %.2f\n", t, q, l}' \
+  /var/log/hp-fan-forense.csv
+```
+
+Duas armadilhas de `awk` com este CSV. Com locale `pt_BR`, o `mawk` lê `0.91` como `0` —
+use `LC_ALL=C`. E lendo de um pipe (`tail -F … | awk`), o `mawk` bufferiza a entrada e não
+emite nada por muito tempo — use `mawk -W interactive`.
+
 Pressão de memória ao longo do tempo:
 
 ```bash

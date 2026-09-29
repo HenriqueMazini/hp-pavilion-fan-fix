@@ -425,10 +425,28 @@ Episódios registrados pela caixa-preta:
 | 27/set 09:39:49 | 54,5 °C | 46 °C | sim, bateria cheia | 29,7 GB | 1,16 |
 | 27/set 19:53:42 | 50,2 °C | 45 °C | sim, carregando | 37,2 GB | 0,71 |
 
-Nenhum episódio aconteceu com a CPU sob esforço. Nos momentos de carga alta (até 99 °C)
-a máquina não travou; todos os travamentos foram com carga abaixo de 1,5 — menos de um
-núcleo ocupado de 16. Isso vai contra a ideia de que a máquina trava "por excesso de
-processamento", e por isso limitar a frequência não foi testado.
+Nenhum travamento aconteceu **no meio** de um esforço: todos foram com carga abaixo de
+1,5 — menos de um núcleo ocupado de 16 — e a CPU entre 50 e 66 °C.
+
+### A última linha não conta a história inteira
+
+Até 28/set este README olhava só a última linha antes de cada travamento. Olhando a hora
+anterior, o quadro muda:
+
+| Travamento | Tctl no fim | Máximo na hora anterior | Última vez ≥ 95 °C |
+|---|---|---|---|
+| 26/set 15:34 | 66,0 °C | **101,1 °C** às 15:01 | 17 min antes |
+| 27/set 09:39 | 54,5 °C | 66,3 °C (71,5 °C em 6 h) | nenhuma em 6 h |
+| 27/set 19:53 | 50,2 °C | **99,0 °C** às 19:24 | 29 min antes |
+
+Dois dos três travamentos vieram 17–29 min depois de a CPU passar de 95 °C. Mas o calor
+sozinho não fecha: o de 27/set 09:39 veio sem calor nenhum, e de 46 passagens acima de
+95 °C registradas desde 24/set, só 2 foram seguidas de travamento em até 30 min —
+suites de teste passaram de 100 °C várias vezes sem travar. O calor fica como possível
+contribuinte, não como gatilho.
+
+**Lição de método:** depois de um evento, olhe a janela de pelo menos 1 hora antes, não só
+as últimas linhas. Receita em [`forense/README.md`](forense/README.md#ler-depois-de-um-evento).
 
 Um terceiro episódio, em 24/set, veio depois de reinstalar o Ubuntu e trocar **toda** a
 RAM (agora 16 + 32 GB). Não há CSV: a reinstalação desfez a caixa-preta e o vigia. O
@@ -528,6 +546,34 @@ Aplicada em 27/set, depois do segundo travamento do dia. A nota de versão da HP
 a caixa-preta. O critério é **uma semana sem travar**. Se travar na F.07, o que sobra é
 defeito físico — placa-mãe ou processador — e o caminho é assistência técnica, com este
 README e o CSV da caixa-preta como histórico do caso.
+
+### Turbo desligado, de forma permanente
+
+Desde 29/set o turbo (Precision Boost) está desligado. Sem ele, a CPU fica em até
+~2,0 GHz em vez de ~4,5 GHz. O objetivo é duplo:
+
+- **Teste:** separar o calor dos travamentos. Se travar com a CPU sempre fria, o calor sai
+  da lista
+- **Segurança:** esta máquina não tem trip crítico no Linux e o tacômetro está morto; a
+  única proteção térmica é o EC. Com turbo, suites de teste passavam de 95 °C com
+  frequência. Um minuto depois de desligar, a CPU foi de 58 para 52 °C sob a mesma suite
+
+```bash
+# aplicado em todo boot pelo systemd-tmpfiles
+echo 'w /sys/devices/system/cpu/cpufreq/boost - - - - 0' \
+  | sudo tee /etc/tmpfiles.d/sem-turbo.conf
+sudo systemd-tmpfiles --create /etc/tmpfiles.d/sem-turbo.conf
+cat /sys/devices/system/cpu/cpufreq/boost   # 0 = desligado
+```
+
+Para desfazer: `sudo rm /etc/tmpfiles.d/sem-turbo.conf` e reiniciar. O custo é
+desempenho — suites e builds ficam mais lentos, sobretudo o que depende de um núcleo só.
+Se incomodar depois de estabilizar, o meio-termo é limitar `scaling_max_freq` (ex.: 3 GHz)
+em vez de desligar o turbo.
+
+Com o turbo desligado, a BIOS F.07 e o calor passam a ser testados juntos: se a máquina
+parar de travar, não dá para dizer qual dos dois resolveu. A F.07 foi aplicada antes, e a
+máquina já estava 1 dia e 1 h sem travar quando o turbo foi desligado.
 
 Sobre o memtest86+: com Secure Boot ligado ele pode não iniciar — desligue
 temporariamente no setup da BIOS (F10) e religue depois. No Ubuntu o menu do GRUB fica
