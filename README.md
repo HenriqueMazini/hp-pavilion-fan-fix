@@ -24,6 +24,7 @@ incluindo o caso em que ela **também não gira dentro do BIOS**, mesmo com
 - [A caixa-preta forense](#a-caixa-preta-forense)
 - [Scripts de diagnóstico](#scripts-de-diagnóstico)
 - [Travamentos: o problema que continua aberto](#travamentos-o-problema-que-continua-aberto)
+- [Suspensão: o botão power não existe para o sistema](#suspensão-o-botão-power-não-existe-para-o-sistema)
 - [O tacômetro: defeito real, mas não era a causa](#o-tacômetro-defeito-real-mas-não-era-a-causa)
 - [O que foi descartado, e por quê](#o-que-foi-descartado-e-por-quê)
 - [Armadilhas que custaram tempo](#armadilhas-que-custaram-tempo)
@@ -539,41 +540,78 @@ travou em 27/set às 09:39, depois de ~16 h, do mesmo jeito: vigia armado sem di
 `pstore` vazio, nenhum erro de Wi-Fi no boot inteiro. O parâmetro foi removido e o passo
 seguinte foi a [BIOS F.07](#bios).
 
-### Em teste: BIOS F.07
+### Uma semana sem travar: BIOS F.07 + CPU limitada
 
-Aplicada em 27/set, depois do segundo travamento do dia. A nota de versão da HP diz só
-*"Provides improved system stability"*. Continuam ativos a mitigação do Wi-Fi, o vigia e
-a caixa-preta. O critério é **uma semana sem travar**. Se travar na F.07, o que sobra é
-defeito físico — placa-mãe ou processador — e o caminho é assistência técnica, com este
-README e o CSV da caixa-preta como histórico do caso.
+A F.07 foi aplicada em 27/set, depois do segundo travamento do dia. A nota de versão da
+HP diz só *"Provides improved system stability"*. Em 29/set a CPU foi limitada a 2,0 GHz
+(ver abaixo). Continuaram ativos a mitigação do Wi-Fi, o vigia e a caixa-preta.
 
-### Turbo desligado, de forma permanente
+**Resultado:** nenhum travamento de 27/set a 4/out. Dois boots seguidos — ~3 dias
+(27/set→1/out, encerrado por reinício normal) e ~3,5 dias (1/out→4/out) —, contra
+travamentos a cada 1–2 dias antes. O segundo boot terminou numa suspensão da qual a
+máquina "não voltou", mas isso [não foi travamento](#suspensão-o-botão-power-não-existe-para-o-sistema):
+nada no notebook consegue acordá-lo, exceto a tampa.
 
-Desde 29/set o turbo (Precision Boost) está desligado. Sem ele, a CPU fica em até
-~2,0 GHz em vez de ~4,5 GHz. O objetivo é duplo:
+Ressalva: F.07 e limite de frequência entraram quase juntos, então não dá para dizer qual
+dos dois resolveu — nem se resolveu de vez, já que uma semana é pouco para um problema
+que já ficou 44 h quieto. A F.07 foi aplicada primeiro, e a máquina já estava 1 dia e
+1 h sem travar quando a CPU foi limitada.
+
+Se voltar a travar, o que sobra é defeito físico — placa-mãe ou processador — e o caminho
+é assistência técnica, com este README e o CSV da caixa-preta como histórico do caso.
+
+### Limite de frequência da CPU
+
+O objetivo é duplo:
 
 - **Teste:** separar o calor dos travamentos. Se travar com a CPU sempre fria, o calor sai
   da lista
 - **Segurança:** esta máquina não tem trip crítico no Linux e o tacômetro está morto; a
-  única proteção térmica é o EC. Com turbo, suites de teste passavam de 95 °C com
-  frequência. Um minuto depois de desligar, a CPU foi de 58 para 52 °C sob a mesma suite
+  única proteção térmica é o EC. Sem limite, suites de teste passavam de 95 °C com
+  frequência
 
-```bash
-# aplicado em todo boot pelo systemd-tmpfiles
-echo 'w /sys/devices/system/cpu/cpufreq/boost - - - - 0' \
-  | sudo tee /etc/tmpfiles.d/sem-turbo.conf
-sudo systemd-tmpfiles --create /etc/tmpfiles.d/sem-turbo.conf
-cat /sys/devices/system/cpu/cpufreq/boost   # 0 = desligado
+Histórico:
+
+| Período | Configuração | Resultado |
+|---|---|---|
+| 29/set–4/out | turbo desligado (`boost=0`), ~2,0 GHz | Tctl médio ~48 °C, máximo 63,5 °C sob carga 26; nenhum travamento. Mas **quebrou os modos de energia** (ver abaixo) |
+| 4/out | turbo ligado + teto de 2,0 GHz | mesmo efeito térmico, modos de energia funcionando |
+| desde 4/out | turbo ligado + teto de **3,0 GHz** | em teste; 2.994 MHz com carga num núcleo |
+
+**Não desligue o turbo com `boost=0`.** O `power-profiles-daemon` (o seletor
+Economia/Equilibrado/Desempenho do GNOME) escreve `boost` por núcleo em
+`/sys/devices/system/cpu/cpufreq/policyN/boost` a cada troca de modo. Com o turbo
+desligado globalmente, o kernel recusa (`EINVAL`) e o daemon aborta a troca inteira — o
+modo fica preso em Equilibrado:
+
+```
+Failed to activate CPU driver 'amd_pstate': Error writing
+'/sys/devices/system/cpu/cpufreq/policy11/boost': Argumento inválido
 ```
 
-Para desfazer: `sudo rm /etc/tmpfiles.d/sem-turbo.conf` e reiniciar. O custo é
-desempenho — suites e builds ficam mais lentos, sobretudo o que depende de um núcleo só.
-Se incomodar depois de estabilizar, o meio-termo é limitar `scaling_max_freq` (ex.: 3 GHz)
-em vez de desligar o turbo.
+O jeito que funciona é deixar o turbo ligado e limitar `scaling_max_freq`, que o daemon
+não toca. Acima de 2,0 GHz (a frequência base do 7730U) tudo já é turbo, então um teto de
+2,0 GHz equivale a turbo desligado. Conteúdo de `/etc/tmpfiles.d/limite-cpu.conf`:
 
-Com o turbo desligado, a BIOS F.07 e o calor passam a ser testados juntos: se a máquina
-parar de travar, não dá para dizer qual dos dois resolveu. A F.07 foi aplicada antes, e a
-máquina já estava 1 dia e 1 h sem travar quando o turbo foi desligado.
+```
+w /sys/devices/system/cpu/cpufreq/boost - - - - 1
+w /sys/devices/system/cpu/cpu*/cpufreq/scaling_max_freq - - - - 3000000
+```
+
+```bash
+sudo systemd-tmpfiles --create /etc/tmpfiles.d/limite-cpu.conf   # aplica sem reiniciar
+cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_max_freq | sort | uniq -c
+powerprofilesctl set power-saver && powerprofilesctl get        # deve trocar sem erro
+```
+
+Para mudar o teto, troque o número (em kHz) e rode o `systemd-tmpfiles` de novo. Para
+desfazer, apague o arquivo e reinicie.
+
+Por que 3,0 GHz: os picos de 95–100 °C vinham de poucos núcleos a ~4,5 GHz (carga 3–6),
+e é isso que o teto corta; com 16 núcleos ocupados o `amd-pstate-epp` já roda sozinho
+entre 2,6 e 3,0 GHz. Atenção ao [efeito contraintuitivo](dados/medicoes.md) medido em
+setembro: com 16 threads, um teto de 3,5 GHz esquentou **mais** (85,4 °C) que sem teto
+(78,2 °C). Vale conferir na caixa-preta se 3,0 GHz repete isso.
 
 Sobre o memtest86+: com Secure Boot ligado ele pode não iniciar — desligue
 temporariamente no setup da BIOS (F10) e religue depois. No Ubuntu o menu do GRUB fica
@@ -589,6 +627,45 @@ caixa-preta antes.
 E antes de concluir qualquer coisa sobre um "desligamento", **pergunte o que aconteceu
 com o LED**. É uma observação de dois segundos, não fica em log nenhum, e sozinha derrubou
 a tese central desta seção.
+
+## Suspensão: o botão power não existe para o sistema
+
+Neste modelo, **nada no teclado acorda a máquina da suspensão**, e o **botão power nunca
+chega ao sistema operacional**. Só a tampa acorda. Isso transformou uma suspensão comum,
+em 4/out, num falso travamento: o notebook dormiu e nenhuma tecla o trazia de volta.
+
+| Teste (4/out, BIOS F.07) | Resultado |
+|---|---|
+| suspender com alarme de RTC (`wakealarm` +30 s) | dormiu e voltou sozinho, sem erro — o s2idle funciona |
+| teclado durante a suspensão | o kernel desliga essa fonte de despertar: `atkbd serio0: Disabling IRQ1 wakeup source to avoid platform firmware bug` |
+| botão power, com o sistema acordado | **nenhum evento** em `/dev/input/event0` (o `Power Button` do ACPI) nem nas hotkeys do `hp-wmi`, em 3 toques |
+| fechar e abrir a tampa durante a suspensão | **acordou** em 28 s, antes do alarme de 120 s: `Wakeup after ACPI Notify sync` |
+
+O botão power nunca suspendeu a máquina — nem no Ubuntu nem no Zorin —, então não é
+algo que quebrou agora. Como o GNOME não recebe nada, a configuração
+`power-button-action = suspend` é inócua. O botão continua funcionando para ligar e,
+segurado, para forçar o desligamento, porque isso é feito pelo hardware, sem o SO. A
+causa exata não foi isolada; a BIOS loga em todo boot
+`Could not resolve symbol [\_SB.PCI0.28.EC0]`, um caminho de EC que não existe (o real é
+`\_SB.PCI0.SBRG.EC0`), mas sem o DSDT não dá para afirmar que é isso.
+
+Na prática:
+
+- **Suspender:** pelo menu do GNOME, não pelo botão
+- **Acordar:** fechar e abrir a tampa. Teclado e botão power não acordam
+- Com monitor externo ligado, fechar a tampa **não** suspende (padrão do GNOME), então
+  fechar e abrir é seguro
+
+Para testar a suspensão sem risco de ficar preso, use um alarme de RTC como rede de
+segurança:
+
+```bash
+echo 1 | sudo tee /sys/power/pm_debug_messages   # detalhes de suspend/resume no log
+echo 0 | sudo tee /sys/class/rtc/rtc0/wakealarm
+echo +120 | sudo tee /sys/class/rtc/rtc0/wakealarm
+sudo systemctl suspend
+journalctl -b -k | grep -E 'PM: (suspend|resume)|Wakeup|IRQ1'   # depois de voltar
+```
 
 ## O tacômetro: defeito real, mas não era a causa
 
