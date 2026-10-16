@@ -8,6 +8,11 @@ incluindo o caso em que ela **também não gira dentro do BIOS**, mesmo com
 > É gratuito, leva minutos e foi o que resolveu de verdade neste caso. Todo o resto
 > deste repositório é o diagnóstico que levou até lá, as medições que o sustentam, e a
 > mitigação para enquanto o problema persistir.
+>
+> **Se o seu sintoma é travamento** — telas e mouse apagam, mas o LED do power fica
+> aceso —, veja [Travamentos](#travamentos-resolvidos-pela-bios-f07--limite-de-cpu). Aqui eles pararam com a
+> BIOS F.07 e a CPU limitada a 3,0 GHz: nenhum travamento de 27/set a 16/out, contra um a
+> cada 1–2 dias antes.
 
 ---
 
@@ -23,7 +28,7 @@ incluindo o caso em que ela **também não gira dentro do BIOS**, mesmo com
 - [A mitigação: `hp-fan-curve`](#a-mitigação-hp-fan-curve)
 - [A caixa-preta forense](#a-caixa-preta-forense)
 - [Scripts de diagnóstico](#scripts-de-diagnóstico)
-- [Travamentos: o problema que continua aberto](#travamentos-o-problema-que-continua-aberto)
+- [Travamentos: resolvidos pela BIOS F.07 + limite de CPU](#travamentos-resolvidos-pela-bios-f07--limite-de-cpu)
 - [Suspensão: o botão power não existe para o sistema](#suspensão-o-botão-power-não-existe-para-o-sistema)
 - [O tacômetro: defeito real, mas não era a causa](#o-tacômetro-defeito-real-mas-não-era-a-causa)
 - [O que foi descartado, e por quê](#o-que-foi-descartado-e-por-quê)
@@ -118,7 +123,7 @@ Sistema onde o diagnóstico foi feito:
 | CPU | AMD Ryzen 7 7730U |
 | BIOS | **F.07** (16/10/2024), AMI — atualizada em 27/set/2026; o diagnóstico foi feito na F.05 |
 | SO na época do diagnóstico | Ubuntu 26.04 LTS, kernel 7.0.0-29 |
-| SO atual | Ubuntu 26.04 (reinstalado em 22/set), kernel 7.0.0-34 |
+| SO atual | Ubuntu 26.04 (reinstalado em 22/set), kernel 7.0.0-38 |
 | RAM atual | 16 + 32 GB (nenhum pente original) |
 | Driver | `hp-wmi` (`/sys/class/hwmon/hwmonN` com `name=hp`) |
 
@@ -133,7 +138,7 @@ driver (perfis térmicos, e no caso do Victus S até `pwm1` proporcional).
 
 - Ventoinha completamente parada, mesmo sob carga pesada
 - Notebook **trava**: telas e mouse apagam, mas o LED do power continua aceso — parece
-  desligamento, [e não é](#travamentos-o-problema-que-continua-aberto)
+  desligamento, [e não é](#travamentos-resolvidos-pela-bios-f07--limite-de-cpu)
 - `sensors` mostra `fan1: 0 RPM` e `fan2: 0 RPM`
 - **A ventoinha também não gira dentro do BIOS/UEFI**, com `Fan Always On = Enabled`
 - Reset de CMOS/EC pelo procedimento curto não resolve
@@ -345,7 +350,7 @@ no CSV:
 
 | O que se vê | Conclusão |
 |---|---|
-| LED do power **aceso**, telas e USB mortas | **travamento** — a energia não foi cortada ([ver abaixo](#travamentos-o-problema-que-continua-aberto)) |
+| LED do power **aceso**, telas e USB mortas | **travamento** — a energia não foi cortada ([ver abaixo](#travamentos-resolvidos-pela-bios-f07--limite-de-cpu)) |
 | LED **apagado**, `ac_online` cai para `0` antes | perda de alimentação externa (tomada, fonte, cabo) |
 | LED **apagado**, `ac_online` em `1` até a última linha | o **EC ou o hardware** cortou a energia |
 | `tctl` subindo forte na última linha | térmico |
@@ -374,10 +379,15 @@ Os testes de carga têm, **sempre ativas**: aborto automático por temperatura (
 põe a ventoinha em máximo, espera de resfriamento antes de começar, e teto rígido de
 duração. A carga é um laço de inteiros puro, deliberadamente mais branda que `stress-ng`.
 
-## Travamentos: o problema que continua aberto
+## Travamentos: resolvidos pela BIOS F.07 + limite de CPU
 
-O problema que continua aberto nesta máquina **não é desligamento — é travamento**. Este
-README passou semanas afirmando o contrário.
+**Situação em 16/out:** nenhum travamento desde 27/set — quase 3 semanas, incluindo um
+boot de 10 dias seguidos. O que mudou foi a BIOS F.07 e o limite de frequência da CPU,
+aplicados quase juntos ([resultado](#o-resultado-três-semanas-sem-travar)). O resto desta
+seção é o caminho até lá.
+
+O problema nesta máquina **não era desligamento — era travamento**. Este README passou
+semanas afirmando o contrário.
 
 O sintoma, igual em todos os episódios desde o começo — na época da ventoinha parada,
 depois com ela comprovadamente em máximo, e depois do reset do EC: **as telas apagam, o
@@ -540,25 +550,36 @@ travou em 27/set às 09:39, depois de ~16 h, do mesmo jeito: vigia armado sem di
 `pstore` vazio, nenhum erro de Wi-Fi no boot inteiro. O parâmetro foi removido e o passo
 seguinte foi a [BIOS F.07](#bios).
 
-### Uma semana sem travar: BIOS F.07 + CPU limitada
+### O resultado: três semanas sem travar
 
 A F.07 foi aplicada em 27/set, depois do segundo travamento do dia. A nota de versão da
-HP diz só *"Provides improved system stability"*. Em 29/set a CPU foi limitada a 2,0 GHz
-(ver abaixo). Continuaram ativos a mitigação do Wi-Fi, o vigia e a caixa-preta.
+HP diz só *"Provides improved system stability"*. Em 29/set a CPU foi limitada a 2,0 GHz,
+e em 4/out o teto subiu para 3,0 GHz ([ver abaixo](#limite-de-frequência-da-cpu)).
+Continuaram ativos a mitigação do Wi-Fi, o vigia e a caixa-preta.
 
-**Resultado:** nenhum travamento de 27/set a 4/out. Dois boots seguidos — ~3 dias
-(27/set→1/out, encerrado por reinício normal) e ~3,5 dias (1/out→4/out) —, contra
-travamentos a cada 1–2 dias antes. O segundo boot terminou numa suspensão da qual a
-máquina "não voltou", mas isso [não foi travamento](#suspensão-o-botão-power-não-existe-para-o-sistema):
-nada no notebook consegue acordá-lo, exceto a tampa.
+| Boot | Duração | Como terminou |
+|---|---|---|
+| 27/set 23:23 → 1/out 00:06 | ~3 dias | reinício normal |
+| 1/out 00:06 → 4/out 11:48 | ~3,5 dias | suspensão sem meio de acordar — [não foi travamento](#suspensão-o-botão-power-não-existe-para-o-sistema) |
+| 4/out 14:06 → 14/out 18:01 | **10 dias** | desligamento normal (atualização do kernel para 7.0.0-38); 6 suspensões, todas retomadas |
+| desde 14/out 18:01 | 1 dia e 20 h em 16/out | em uso |
 
-Ressalva: F.07 e limite de frequência entraram quase juntos, então não dá para dizer qual
-dos dois resolveu — nem se resolveu de vez, já que uma semana é pouco para um problema
-que já ficou 44 h quieto. A F.07 foi aplicada primeiro, e a máquina já estava 1 dia e
-1 h sem travar quando a CPU foi limitada.
+Antes, os travamentos vinham a cada 1–2 dias, e o maior intervalo depois da reinstalação
+tinha sido ~44 h. O `pstore` segue vazio.
+
+Com o teto de 3,0 GHz, de 4/out a 16/out (216 h registradas pela caixa-preta): Tctl médio
+**48 °C**, máximo **86 °C**, e **nenhuma amostra ≥ 95 °C** — contra 46 passagens acima de
+95 °C entre 24/set e 29/set sem limite.
+
+**O que não dá para afirmar:** F.07 e limite de frequência entraram com dois dias de
+diferença, então não se sabe qual dos dois resolveu, ou se foi a combinação. Separar exigiria
+semanas com a CPU sem limite, e não vale o risco: a máquina está estável e mais fria, e o
+teto de 3,0 GHz pouco pesa no uso. A recomendação para quem tem o mesmo sintoma é aplicar
+os dois.
 
 Se voltar a travar, o que sobra é defeito físico — placa-mãe ou processador — e o caminho
-é assistência técnica, com este README e o CSV da caixa-preta como histórico do caso.
+é assistência técnica, com este README e o CSV da caixa-preta como histórico do caso. O
+vigia de travamento, a caixa-preta e a mitigação do Wi-Fi continuam instalados para isso.
 
 ### Limite de frequência da CPU
 
@@ -576,7 +597,7 @@ Histórico:
 |---|---|---|
 | 29/set–4/out | turbo desligado (`boost=0`), ~2,0 GHz | Tctl médio ~48 °C, máximo 63,5 °C sob carga 26; nenhum travamento. Mas **quebrou os modos de energia** (ver abaixo) |
 | 4/out | turbo ligado + teto de 2,0 GHz | mesmo efeito térmico, modos de energia funcionando |
-| desde 4/out | turbo ligado + teto de **3,0 GHz** | em teste; 2.994 MHz com carga num núcleo |
+| desde 4/out | turbo ligado + teto de **3,0 GHz** | 2.994 MHz com carga num núcleo; até 16/out, Tctl médio 48 °C, máximo 86 °C, nenhum travamento |
 
 **Não desligue o turbo com `boost=0`.** O `power-profiles-daemon` (o seletor
 Economia/Equilibrado/Desempenho do GNOME) escreve `boost` por núcleo em
@@ -781,7 +802,7 @@ A F.07 **não** corrige o `_CRT` inválido (`Invalid critical threshold (-274000
 no boot) nem o `AE_AML_BUFFER_LIMIT` do `hp_bioscfg`.
 
 **Quando atualizar:** a BIOS carrega o firmware do EC e do processador, que são suspeitos
-tanto da ventoinha parada quanto dos [travamentos](#travamentos-o-problema-que-continua-aberto).
+tanto da ventoinha parada quanto dos [travamentos](#travamentos-resolvidos-pela-bios-f07--limite-de-cpu).
 A F.07 é uma carta legítima, mas **não numa máquina que está funcionando**. Um travamento
 no meio da gravação, que obriga a desligar no botão, deixa você sem máquina. A gravação
 roda fora do Linux, então um travamento de driver ou de kernel não chega a ela — o risco é

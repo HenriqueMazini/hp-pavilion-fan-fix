@@ -23,7 +23,7 @@ linha é normal e depois não há nada. Quem distingue é o LED do botão power:
 
 Num travamento, a caixa-preta mostra o estado da máquina até o fim, mas não o que travou.
 Para isso, arme o vigia de travamento do kernel — ver
-[Travamentos](../README.md#travamentos-o-problema-que-continua-aberto) no README principal.
+[Travamentos](../README.md#travamentos-resolvidos-pela-bios-f07--limite-de-cpu) no README principal.
 
 **Memória — a outra causa plausível de processo morto ou sistema travado:**
 
